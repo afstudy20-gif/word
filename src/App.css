@@ -1,8 +1,8 @@
 .app-shell {
   margin: 0 auto;
-  width: min(1120px, 100%);
+  width: min(720px, 100%);
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 /* Hero header */
@@ -127,7 +127,7 @@
 .filters {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .filters label {
@@ -169,7 +169,7 @@
 /* Stats grid */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -516,48 +516,63 @@
 }
 
 /* Responsive */
-@media (max-width: 1000px) {
-  .filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .library-item {
-    grid-template-columns: 1fr;
-  }
-
-  .library-tags {
-    justify-content: start;
-  }
-}
-
-@media (max-width: 680px) {
+@media (max-width: 480px) {
   #root {
-    padding-inline: 12px;
+    padding: 12px 8px 32px;
   }
 
-  .hero-head,
+  .app-shell {
+    gap: 10px;
+  }
+
+  .hero-head {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .hero-head h1 {
+    font-size: 1.25rem;
+  }
+
+  .subtext {
+    font-size: 0.85rem;
+  }
+
   .control-panel,
   .flashcard,
   .quiz-card,
   .empty-card,
   .library-head,
   .library-item {
-    border-radius: 14px;
+    border-radius: 12px;
   }
 
-  .filters,
-  .stats-grid {
+  .control-panel {
+    padding: 10px;
+  }
+
+  .filters {
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stats-grid article {
+    padding: 12px;
+  }
+
+  .stats-grid p {
+    font-size: 1.3rem;
   }
 
   .hero-top-row {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+    gap: 10px;
   }
 
   .user-info {
@@ -565,12 +580,78 @@
     justify-content: space-between;
   }
 
+  .tabs {
+    width: 100%;
+  }
+
+  .tabs button {
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .flashcard,
+  .quiz-card,
+  .empty-card {
+    padding: 14px;
+  }
+
+  .card-face {
+    padding: 16px;
+    min-height: 180px;
+  }
+
+  .card-face h2 {
+    font-size: 1.4rem;
+  }
+
   .grading-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
   }
 
   .grading-row button {
     text-align: center;
+    padding: 10px 6px;
+    font-size: 0.8rem;
+  }
+
+  .actions-row {
+    gap: 6px;
+  }
+
+  .actions-row button {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+  }
+
+  .library-item {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .library-tags {
+    justify-content: start;
+  }
+
+  .library-item h3 {
+    font-size: 1rem;
+  }
+
+  .options-grid button {
+    padding: 11px 12px;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .grading-row {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
