@@ -1,4 +1,5 @@
 import type { CardProgress, QuizQuestion, VocabCard } from '../types'
+import { decompose, PREFIXES } from './morphology'
 
 function shuffle<T>(items: T[]): T[] {
   const copy = [...items]
@@ -97,7 +98,58 @@ export function buildQuizQuestions(
     if (card.examples.length > 0) {
       kinds.push('cloze')
     }
+    // Add synonym if meaningEn has comma-separated synonyms
+    if (card.meaningEn && card.meaningEn.includes(',')) {
+      kinds.push('synonym')
+    }
+    // Add word_building if the term can be decomposed
+    if (card.type === 'word' && decompose(card.term)) {
+      kinds.push('word_building')
+    }
     const kind = kinds[Math.floor(Math.random() * kinds.length)]
+
+    if (kind === 'synonym') {
+      const firstSynonym = card.meaningEn.split(',')[0].trim()
+      const wrong = sample(
+        cards
+          .filter(c => c.id !== card.id && c.meaningEn)
+          .map(c => c.meaningEn.split(',')[0].trim())
+          .filter(Boolean),
+        3,
+      )
+      const options = shuffle(uniqueOptions([firstSynonym, ...wrong])).slice(0, 4)
+      return {
+        id: `q-${idx}-${card.id}`,
+        cardId: card.id,
+        kind,
+        prompt: `"${card.term}" ile en yakın anlamlı kelime hangisi?`,
+        options,
+        answer: firstSynonym,
+      }
+    }
+
+    if (kind === 'word_building') {
+      const d = decompose(card.term)!
+      const prefixInfo = d.prefix ? PREFIXES.find(p => p.affix === d.prefix!.affix) : undefined
+      const prompt = d.prefix
+        ? `"${d.prefix.affix}-" (${prefixInfo?.meaningTr || d.prefix.meaningTr}) ön eki ile başlayan kelime hangisi?`
+        : `"${card.term}" kelimesinin kökü nedir?`
+      const wrong = sample(
+        cards
+          .filter(c => c.id !== card.id)
+          .map(c => c.term),
+        3,
+      )
+      const options = shuffle(uniqueOptions([card.term, ...wrong])).slice(0, 4)
+      return {
+        id: `q-${idx}-${card.id}`,
+        cardId: card.id,
+        kind,
+        prompt,
+        options,
+        answer: card.term,
+      }
+    }
 
     if (kind === 'tr_meaning') {
       const wrong = sample(

@@ -10,6 +10,7 @@ import {
   setOnUnauthorized,
   setToken,
 } from './lib/api'
+import { decompose, findRelatedByAffix, groupByPrefix, PREFIXES } from './lib/morphology'
 import { buildQuizQuestions } from './lib/quiz'
 import {
   applyReview,
@@ -102,6 +103,7 @@ function App() {
   const [reviewedInSession, setReviewedInSession] = useState(0)
 
   const [quiz, setQuiz] = useState<QuizSession | null>(null)
+  const [libraryView, setLibraryView] = useState<'az' | 'family'>('az')
 
   // Debounced save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -572,6 +574,36 @@ function App() {
                         ))}
                       </div>
                     ) : null}
+
+                    {(() => {
+                      const d = decompose(activeCard.term)
+                      if (!d) return null
+                      const allTerms = filteredCards.map(c => c.term)
+                      const related = findRelatedByAffix(activeCard.term, allTerms)
+                      return (
+                        <div className="morphology-box">
+                          <h4>Kelime Yapısı</h4>
+                          <div className="morph-parts">
+                            {d.prefix && (
+                              <span className="morph-pill prefix">
+                                {d.prefix.affix}- <small>{d.prefix.meaningTr}</small>
+                              </span>
+                            )}
+                            <span className="morph-pill root">{d.root}</span>
+                            {d.suffix && (
+                              <span className="morph-pill suffix">
+                                -{d.suffix.affix} <small>{d.suffix.meaningTr}</small>
+                              </span>
+                            )}
+                          </div>
+                          {related.length > 0 && (
+                            <p className="morph-related">
+                              Benzer: {related.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 ) : null}
               </button>
@@ -690,35 +722,115 @@ function App() {
         <section className="workspace library-space">
           <div className="library-head">
             <h2>Kütüphane</h2>
-            <button className="secondary" onClick={resetAllProgress}>
-              Tüm İlerlemeyi Sıfırla
-            </button>
+            <div className="library-actions">
+              <div className="library-view-toggle">
+                <button
+                  className={libraryView === 'az' ? 'is-active' : ''}
+                  onClick={() => setLibraryView('az')}
+                >
+                  A-Z
+                </button>
+                <button
+                  className={libraryView === 'family' ? 'is-active' : ''}
+                  onClick={() => setLibraryView('family')}
+                >
+                  Kelime Ailesi
+                </button>
+              </div>
+              <button className="secondary" onClick={resetAllProgress}>
+                Sıfırla
+              </button>
+            </div>
           </div>
 
-          <div className="library-list">
-            {libraryCards.map((card) => {
-              const cardProgress = progress[card.id]
-              const known = Boolean(cardProgress?.known)
-              const due = !cardProgress || new Date(cardProgress.dueAt).getTime() <= Date.now()
+          {libraryView === 'az' ? (
+            <div className="library-list">
+              {libraryCards.map((card) => {
+                const cardProgress = progress[card.id]
+                const known = Boolean(cardProgress?.known)
+                const due = !cardProgress || new Date(cardProgress.dueAt).getTime() <= Date.now()
 
-              return (
-                <article key={card.id} className="library-item">
-                  <div>
-                    <h3>{card.term}</h3>
-                    <p>{card.meaningTr}</p>
-                    <small>{card.meaningEn}</small>
-                  </div>
-                  <div className="library-tags">
-                    <span className="pill">{registerLabels[card.register]}</span>
-                    <span className="pill">{typeLabels[card.type]}</span>
-                    <span className={`pill ${known ? 'known-pill' : ''}`}>
-                      {known ? 'Known' : due ? 'Due' : 'Learning'}
-                    </span>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
+                return (
+                  <article key={card.id} className="library-item">
+                    <div>
+                      <h3>{card.term}</h3>
+                      <p>{card.meaningTr}</p>
+                      <small>{card.meaningEn}</small>
+                    </div>
+                    <div className="library-tags">
+                      <span className="pill">{registerLabels[card.register]}</span>
+                      <span className="pill">{typeLabels[card.type]}</span>
+                      <span className={`pill ${known ? 'known-pill' : ''}`}>
+                        {known ? 'Known' : due ? 'Due' : 'Learning'}
+                      </span>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="library-list">
+              {(() => {
+                const prefixGroups = groupByPrefix(libraryCards.map(c => c.term))
+                const cardMap = new Map(libraryCards.map(c => [c.term.toLowerCase(), c]))
+                const grouped = new Set<string>()
+
+                const sortedPrefixes = [...prefixGroups.entries()]
+                  .filter(([, terms]) => terms.length >= 2)
+                  .sort((a, b) => b[1].length - a[1].length)
+
+                const prefixInfo = new Map(PREFIXES.map(p => [p.affix, p]))
+
+                return (
+                  <>
+                    {sortedPrefixes.map(([prefix, terms]) => {
+                      terms.forEach(t => grouped.add(t.toLowerCase()))
+                      const info = prefixInfo.get(prefix)
+                      return (
+                        <div key={prefix} className="family-group">
+                          <div className="family-header">
+                            <span className="morph-pill prefix">{prefix}-</span>
+                            <span className="family-meaning">
+                              {info ? `${info.meaningTr} (${info.meaningEn})` : ''}
+                            </span>
+                            <small>{terms.length} kelime</small>
+                          </div>
+                          {terms.sort().map(term => {
+                            const card = cardMap.get(term.toLowerCase())
+                            if (!card) return null
+                            return (
+                              <article key={card.id} className="library-item family-item">
+                                <div>
+                                  <h3>{card.term}</h3>
+                                  <p>{card.meaningTr}</p>
+                                </div>
+                              </article>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                    <div className="family-group">
+                      <div className="family-header">
+                        <span className="family-meaning">Diğer</span>
+                        <small>{libraryCards.filter(c => !grouped.has(c.term.toLowerCase())).length} kelime</small>
+                      </div>
+                      {libraryCards
+                        .filter(c => !grouped.has(c.term.toLowerCase()))
+                        .map(card => (
+                          <article key={card.id} className="library-item family-item">
+                            <div>
+                              <h3>{card.term}</h3>
+                              <p>{card.meaningTr}</p>
+                            </div>
+                          </article>
+                        ))}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </section>
       )}
       {translatePopup && (

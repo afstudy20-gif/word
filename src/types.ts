@@ -36,7 +36,7 @@ export interface CardProgress {
 export interface QuizQuestion {
   id: string
   cardId: string
-  kind: 'tr_meaning' | 'en_meaning' | 'cloze'
+  kind: 'tr_meaning' | 'en_meaning' | 'cloze' | 'synonym' | 'word_building'
   prompt: string
   options: string[]
   answer: string
