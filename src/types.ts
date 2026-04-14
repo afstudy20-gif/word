@@ -42,3 +42,12 @@ export interface QuizQuestion {
   answer: string
   sentence?: string
 }
+
+export interface MorphQuizQuestion {
+  id: string
+  kind: 'affix_meaning' | 'find_prefix' | 'suffix_role' | 'word_with_affix'
+  prompt: string
+  options: string[]
+  answer: string
+  explanation: string
+}

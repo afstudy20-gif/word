@@ -10,7 +10,7 @@ import {
   setOnUnauthorized,
   setToken,
 } from './lib/api'
-import { decompose, findRelatedByAffix, groupByPrefix, PREFIXES } from './lib/morphology'
+import { decompose, findRelatedByAffix, groupByPrefix, buildMorphQuiz, PREFIXES, SUFFIXES } from './lib/morphology'
 import { buildQuizQuestions } from './lib/quiz'
 import {
   applyReview,
@@ -22,13 +22,15 @@ import type {
   AuthState,
   CardProgress,
   CardType,
+  MorphQuizQuestion,
   QuizQuestion,
   RegisterType,
   ReviewRating,
   VocabCard,
 } from './types'
 
-type ViewMode = 'flashcards' | 'quiz' | 'library'
+type ViewMode = 'flashcards' | 'quiz' | 'library' | 'word-structure'
+type StructureSubView = 'explorer' | 'decomposer' | 'quiz'
 
 type RegisterFilter = 'all' | RegisterType
 type TypeFilter = 'all' | CardType
@@ -104,6 +106,19 @@ function App() {
 
   const [quiz, setQuiz] = useState<QuizSession | null>(null)
   const [libraryView, setLibraryView] = useState<'az' | 'family'>('az')
+
+  // Kelime Yapısı panel state
+  const [structureSubView, setStructureSubView] = useState<StructureSubView>('explorer')
+  const [selectedAffix, setSelectedAffix] = useState<string | null>(null)
+  const [selectedAffixType, setSelectedAffixType] = useState<'prefix' | 'suffix'>('prefix')
+  const [decomposeInput, setDecomposeInput] = useState('')
+  const [morphQuiz, setMorphQuiz] = useState<{
+    questions: MorphQuizQuestion[]
+    index: number
+    selected?: string
+    submitted: boolean
+    correct: number
+  } | null>(null)
 
   // Debounced save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -461,6 +476,12 @@ function App() {
             onClick={() => setMode('library')}
           >
             Kütüphane
+          </button>
+          <button
+            className={mode === 'word-structure' ? 'is-active' : ''}
+            onClick={() => setMode('word-structure')}
+          >
+            Kelime Yapısı
           </button>
         </div>
 
@@ -833,6 +854,249 @@ function App() {
           )}
         </section>
       )}
+      {!loading && !loadError && mode === 'word-structure' && (
+        <section className="workspace structure-space">
+          <div className="structure-nav">
+            <button
+              className={structureSubView === 'explorer' ? 'is-active' : ''}
+              onClick={() => setStructureSubView('explorer')}
+            >
+              Ek Gezgini
+            </button>
+            <button
+              className={structureSubView === 'decomposer' ? 'is-active' : ''}
+              onClick={() => setStructureSubView('decomposer')}
+            >
+              Kelime Parçala
+            </button>
+            <button
+              className={structureSubView === 'quiz' ? 'is-active' : ''}
+              onClick={() => setStructureSubView('quiz')}
+            >
+              Yapı Quizi
+            </button>
+          </div>
+
+          {structureSubView === 'explorer' && (
+            <div className="explorer-panel">
+              {!selectedAffix ? (
+                <>
+                  <h3 className="section-title">Ön Ekler (Prefixes)</h3>
+                  <div className="affix-grid">
+                    {PREFIXES.map(p => {
+                      const count = filteredCards.filter(c => {
+                        const d = decompose(c.term)
+                        return d?.prefix?.affix === p.affix
+                      }).length
+                      return (
+                        <button
+                          key={`p-${p.affix}`}
+                          className="affix-card"
+                          onClick={() => { setSelectedAffix(p.affix); setSelectedAffixType('prefix') }}
+                        >
+                          <span className="morph-pill prefix">{p.affix}-</span>
+                          <span className="affix-meaning">{p.meaningTr}</span>
+                          <small>{count} kelime</small>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <h3 className="section-title">Son Ekler (Suffixes)</h3>
+                  <div className="affix-grid">
+                    {SUFFIXES.map(s => {
+                      const count = filteredCards.filter(c => {
+                        const d = decompose(c.term)
+                        return d?.suffix?.affix === s.affix
+                      }).length
+                      return (
+                        <button
+                          key={`s-${s.affix}`}
+                          className="affix-card"
+                          onClick={() => { setSelectedAffix(s.affix); setSelectedAffixType('suffix') }}
+                        >
+                          <span className="morph-pill suffix">-{s.affix}</span>
+                          <span className="affix-meaning">{s.meaningTr}</span>
+                          <small>{count} kelime</small>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="affix-detail">
+                  <button className="back-btn" onClick={() => setSelectedAffix(null)}>
+                    ← Geri
+                  </button>
+                  {(() => {
+                    const info = selectedAffixType === 'prefix'
+                      ? PREFIXES.find(p => p.affix === selectedAffix)
+                      : SUFFIXES.find(s => s.affix === selectedAffix)
+                    const matches = filteredCards.filter(c => {
+                      const d = decompose(c.term)
+                      return selectedAffixType === 'prefix'
+                        ? d?.prefix?.affix === selectedAffix
+                        : d?.suffix?.affix === selectedAffix
+                    })
+                    return (
+                      <>
+                        <div className="affix-detail-header">
+                          <span className={`morph-pill ${selectedAffixType}`}>
+                            {selectedAffixType === 'prefix' ? `${selectedAffix}-` : `-${selectedAffix}`}
+                          </span>
+                          <div>
+                            <strong>{info?.meaningEn}</strong>
+                            <span> — {info?.meaningTr}</span>
+                          </div>
+                        </div>
+                        <p className="affix-count">{matches.length} kelime bulundu</p>
+                        <div className="affix-word-list">
+                          {matches.map(c => (
+                            <div key={c.id} className="affix-word-item">
+                              <strong>{c.term}</strong>
+                              <span>{c.meaningTr}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {structureSubView === 'decomposer' && (
+            <div className="decomposer-panel">
+              <input
+                className="decomposer-input"
+                value={decomposeInput}
+                onChange={e => setDecomposeInput(e.target.value)}
+                placeholder="Bir kelime yaz... (ör. unbelievable)"
+              />
+              {decomposeInput.trim().length >= 3 && (() => {
+                const d = decompose(decomposeInput.trim())
+                if (!d) return (
+                  <p className="decomposer-empty">Bu kelimede bilinen bir ön ek veya son ek bulunamadı.</p>
+                )
+                const related = findRelatedByAffix(decomposeInput.trim(), filteredCards.map(c => c.term), 6)
+                return (
+                  <div className="decomposer-result fade-in">
+                    <div className="morph-parts large">
+                      {d.prefix && (
+                        <span className="morph-pill prefix">
+                          {d.prefix.affix}- <small>{d.prefix.meaningTr}</small>
+                        </span>
+                      )}
+                      <span className="morph-pill root">{d.root}</span>
+                      {d.suffix && (
+                        <span className="morph-pill suffix">
+                          -{d.suffix.affix} <small>{d.suffix.meaningTr}</small>
+                        </span>
+                      )}
+                    </div>
+                    {d.prefix && (
+                      <p className="decomposer-explain">
+                        <strong>{d.prefix.affix}-</strong> = {d.prefix.meaningEn} ({d.prefix.meaningTr})
+                      </p>
+                    )}
+                    {d.suffix && (
+                      <p className="decomposer-explain">
+                        <strong>-{d.suffix.affix}</strong> = {d.suffix.meaningEn} ({d.suffix.meaningTr})
+                      </p>
+                    )}
+                    {related.length > 0 && (
+                      <div className="decomposer-related">
+                        <h4>Benzer yapıdaki kelimeler</h4>
+                        <div className="related-chips">
+                          {related.map(r => <span key={r} className="related-chip">{r}</span>)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {structureSubView === 'quiz' && (
+            <div className="morph-quiz-panel">
+              {!morphQuiz ? (
+                <div className="empty-card">
+                  <h2>Yapı Quizi</h2>
+                  <p>Ön ek ve son ek bilgini test et! 5 soruluk mini quiz.</p>
+                  <button className="primary" onClick={() => {
+                    const qs = buildMorphQuiz(filteredCards.map(c => c.term), 5)
+                    if (qs.length > 0) {
+                      setMorphQuiz({ questions: qs, index: 0, submitted: false, correct: 0 })
+                    }
+                  }}>
+                    Quiz Başlat
+                  </button>
+                </div>
+              ) : (
+                <div className="morph-quiz-card">
+                  <div className="quiz-top">
+                    <span>Soru {morphQuiz.index + 1} / {morphQuiz.questions.length}</span>
+                    <span>Doğru: {morphQuiz.correct}</span>
+                  </div>
+                  <h2>{morphQuiz.questions[morphQuiz.index].prompt}</h2>
+                  <div className="options-grid">
+                    {morphQuiz.questions[morphQuiz.index].options.map(opt => {
+                      const q = morphQuiz.questions[morphQuiz.index]
+                      const isSelected = morphQuiz.selected === opt
+                      const isCorrect = opt === q.answer
+                      return (
+                        <button
+                          key={opt}
+                          className={[
+                            isSelected ? 'selected' : '',
+                            morphQuiz.submitted && isCorrect ? 'correct' : '',
+                            morphQuiz.submitted && isSelected && !isCorrect ? 'wrong' : '',
+                          ].join(' ').trim()}
+                          onClick={() => {
+                            if (!morphQuiz.submitted) setMorphQuiz({ ...morphQuiz, selected: opt })
+                          }}
+                        >
+                          {opt}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {morphQuiz.submitted && (
+                    <p className="morph-explanation fade-in">
+                      {morphQuiz.questions[morphQuiz.index].explanation}
+                    </p>
+                  )}
+                  <div className="quiz-actions">
+                    {!morphQuiz.submitted ? (
+                      <button className="primary" disabled={!morphQuiz.selected} onClick={() => {
+                        const q = morphQuiz.questions[morphQuiz.index]
+                        const isCorrect = morphQuiz.selected === q.answer
+                        setMorphQuiz({ ...morphQuiz, submitted: true, correct: morphQuiz.correct + (isCorrect ? 1 : 0) })
+                      }}>
+                        Kontrol Et
+                      </button>
+                    ) : (
+                      <button className="primary" onClick={() => {
+                        if (morphQuiz.index + 1 >= morphQuiz.questions.length) {
+                          // Quiz finished — restart
+                          const qs = buildMorphQuiz(filteredCards.map(c => c.term), 5)
+                          setMorphQuiz({ questions: qs, index: 0, submitted: false, correct: 0 })
+                        } else {
+                          setMorphQuiz({ ...morphQuiz, index: morphQuiz.index + 1, selected: undefined, submitted: false })
+                        }
+                      }}>
+                        {morphQuiz.index + 1 >= morphQuiz.questions.length ? 'Yeni Quiz' : 'Sonraki Soru'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {translatePopup && (
         <div
           className="translate-popup"

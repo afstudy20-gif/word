@@ -213,4 +213,109 @@ export function groupByPrefix(terms: string[]): Map<string, string[]> {
   return groups
 }
 
+/**
+ * Build a morphology-focused mini quiz.
+ */
+export function buildMorphQuiz(
+  allTerms: string[],
+  count = 5,
+): import('../types').MorphQuizQuestion[] {
+  const questions: import('../types').MorphQuizQuestion[] = []
+
+  function shuffle<T>(arr: T[]): T[] {
+    const c = [...arr]
+    for (let i = c.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[c[i], c[j]] = [c[j], c[i]]
+    }
+    return c
+  }
+
+  function pick<T>(arr: T[], n: number): T[] {
+    return shuffle(arr).slice(0, n)
+  }
+
+  const decomposable = allTerms
+    .map(t => ({ term: t, d: decompose(t) }))
+    .filter(x => x.d !== null) as { term: string; d: Decomposition }[]
+
+  if (decomposable.length < 4) return questions
+
+  const kinds: import('../types').MorphQuizQuestion['kind'][] = [
+    'affix_meaning', 'find_prefix', 'suffix_role', 'word_with_affix',
+  ]
+
+  for (let i = 0; i < count; i++) {
+    const kind = kinds[i % kinds.length]
+    const id = `mq-${i}`
+
+    if (kind === 'affix_meaning') {
+      // "un- ne anlama gelir?"
+      const p = pick(SORTED_PREFIXES, 4)
+      const correct = p[0]
+      const options = shuffle(p.map(x => x.meaningTr))
+      questions.push({
+        id, kind,
+        prompt: `"${correct.affix}-" ön eki ne anlama gelir?`,
+        options,
+        answer: correct.meaningTr,
+        explanation: `${correct.affix}- = ${correct.meaningEn} (${correct.meaningTr})`,
+      })
+    } else if (kind === 'find_prefix') {
+      // "impossible kelimesinde hangi prefix var?"
+      const entry = pick(decomposable.filter(x => x.d.prefix), 1)[0]
+      if (!entry?.d.prefix) continue
+      const wrongPrefixes = pick(
+        SORTED_PREFIXES.filter(p => p.affix !== entry.d.prefix!.affix),
+        3,
+      )
+      const options = shuffle([
+        entry.d.prefix.affix + '-',
+        ...wrongPrefixes.map(p => p.affix + '-'),
+      ])
+      questions.push({
+        id, kind,
+        prompt: `"${entry.term}" kelimesinde hangi ön ek var?`,
+        options,
+        answer: entry.d.prefix.affix + '-',
+        explanation: `${entry.term} = ${entry.d.prefix.affix}- (${entry.d.prefix.meaningTr}) + ${entry.d.root}`,
+      })
+    } else if (kind === 'suffix_role') {
+      // "-ment son eki ne yapar?"
+      const s = pick(SORTED_SUFFIXES, 4)
+      const correct = s[0]
+      const options = shuffle(s.map(x => x.meaningTr))
+      questions.push({
+        id, kind,
+        prompt: `"-${correct.affix}" son eki ne anlama gelir?`,
+        options,
+        answer: correct.meaningTr,
+        explanation: `-${correct.affix} = ${correct.meaningEn} (${correct.meaningTr})`,
+      })
+    } else if (kind === 'word_with_affix') {
+      // "re- ile başlayan kelime hangisi?"
+      const withPrefix = decomposable.filter(x => x.d.prefix)
+      if (withPrefix.length < 1) continue
+      const entry = pick(withPrefix, 1)[0]
+      const prefix = entry.d.prefix!
+      const wrong = pick(
+        decomposable
+          .filter(x => x.d.prefix && x.d.prefix.affix !== prefix.affix)
+          .map(x => x.term),
+        3,
+      )
+      const options = shuffle([entry.term, ...wrong])
+      questions.push({
+        id, kind,
+        prompt: `"${prefix.affix}-" (${prefix.meaningTr}) ön eki ile başlayan kelime hangisi?`,
+        options,
+        answer: entry.term,
+        explanation: `${entry.term} = ${prefix.affix}- (${prefix.meaningTr}) + ${entry.d.root}`,
+      })
+    }
+  }
+
+  return questions
+}
+
 export { PREFIXES, SUFFIXES }
