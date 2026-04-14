@@ -51,3 +51,28 @@ export interface MorphQuizQuestion {
   answer: string
   explanation: string
 }
+
+// Exercises
+export interface ContextItem {
+  card: VocabCard
+  sentence: string       // example with term in bold markers
+  revealed: boolean
+}
+
+export interface FillBlankItem {
+  card: VocabCard
+  sentence: string       // sentence with _____
+  options: string[]
+  answer: string
+}
+
+export interface MatchPair {
+  term: string
+  meaningEn: string
+  cardId: string
+}
+
+export interface TranslationItem {
+  card: VocabCard
+  answer: string          // expected English term
+}

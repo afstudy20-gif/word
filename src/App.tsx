@@ -11,6 +11,7 @@ import {
   setToken,
 } from './lib/api'
 import { decompose, findRelatedByAffix, groupByPrefix, buildMorphQuiz, PREFIXES, SUFFIXES } from './lib/morphology'
+import { buildContextCards, buildFillBlanks, buildSynonymMatch, buildTranslationSet } from './lib/exercises'
 import { buildQuizQuestions } from './lib/quiz'
 import {
   applyReview,
@@ -22,15 +23,20 @@ import type {
   AuthState,
   CardProgress,
   CardType,
+  ContextItem,
+  FillBlankItem,
+  MatchPair,
   MorphQuizQuestion,
   QuizQuestion,
   RegisterType,
   ReviewRating,
+  TranslationItem,
   VocabCard,
 } from './types'
 
-type ViewMode = 'flashcards' | 'quiz' | 'library' | 'word-structure'
+type ViewMode = 'flashcards' | 'quiz' | 'library' | 'word-structure' | 'exercises'
 type StructureSubView = 'explorer' | 'decomposer' | 'quiz'
+type ExerciseSubView = 'context' | 'fill-blank' | 'match' | 'translate'
 
 type RegisterFilter = 'all' | RegisterType
 type TypeFilter = 'all' | CardType
@@ -119,6 +125,24 @@ function App() {
     submitted: boolean
     correct: number
   } | null>(null)
+
+  // Alıştırmalar state
+  const [exerciseSubView, setExerciseSubView] = useState<ExerciseSubView>('context')
+  const [contextItems, setContextItems] = useState<ContextItem[]>([])
+  const [contextIndex, setContextIndex] = useState(0)
+  const [fillItems, setFillItems] = useState<FillBlankItem[]>([])
+  const [fillIndex, setFillIndex] = useState(0)
+  const [fillSelected, setFillSelected] = useState<string | undefined>()
+  const [fillSubmitted, setFillSubmitted] = useState(false)
+  const [fillCorrect, setFillCorrect] = useState(0)
+  const [matchPairs, setMatchPairs] = useState<MatchPair[]>([])
+  const [matchSelectedTerm, setMatchSelectedTerm] = useState<string | null>(null)
+  const [matchResults, setMatchResults] = useState<Record<string, 'correct' | 'wrong'>>({})
+  const [translateItems, setTranslateItems] = useState<TranslationItem[]>([])
+  const [translateIndex, setTranslateIndex] = useState(0)
+  const [translateInput, setTranslateInput] = useState('')
+  const [translateResult, setTranslateResult] = useState<'correct' | 'wrong' | null>(null)
+  const [translateCorrect, setTranslateCorrect] = useState(0)
 
   // Debounced save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -482,6 +506,12 @@ function App() {
             onClick={() => setMode('word-structure')}
           >
             Kelime Yapısı
+          </button>
+          <button
+            className={mode === 'exercises' ? 'is-active' : ''}
+            onClick={() => setMode('exercises')}
+          >
+            Alıştırmalar
           </button>
         </div>
 
@@ -1092,6 +1122,283 @@ function App() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!loading && !loadError && mode === 'exercises' && (
+        <section className="workspace exercises-space">
+          <div className="structure-nav">
+            <button className={exerciseSubView === 'context' ? 'is-active' : ''} onClick={() => setExerciseSubView('context')}>Bağlamda Öğren</button>
+            <button className={exerciseSubView === 'fill-blank' ? 'is-active' : ''} onClick={() => setExerciseSubView('fill-blank')}>Boşluk Doldur</button>
+            <button className={exerciseSubView === 'match' ? 'is-active' : ''} onClick={() => setExerciseSubView('match')}>Eşleme</button>
+            <button className={exerciseSubView === 'translate' ? 'is-active' : ''} onClick={() => setExerciseSubView('translate')}>Çeviri</button>
+          </div>
+
+          {/* 1. Context Learning */}
+          {exerciseSubView === 'context' && (
+            <div className="exercise-card">
+              {contextItems.length === 0 ? (
+                <div className="exercise-start">
+                  <h2>Bağlamda Öğren</h2>
+                  <p>Örnek cümleden kelimeyi tahmin et.</p>
+                  <button className="primary" onClick={() => {
+                    setContextItems(buildContextCards(filteredCards, 10))
+                    setContextIndex(0)
+                  }}>Başla</button>
+                </div>
+              ) : contextIndex >= contextItems.length ? (
+                <div className="exercise-start">
+                  <h2>Tamamlandı!</h2>
+                  <button className="primary" onClick={() => {
+                    setContextItems(buildContextCards(filteredCards, 10))
+                    setContextIndex(0)
+                  }}>Tekrar Başla</button>
+                </div>
+              ) : (() => {
+                const item = contextItems[contextIndex]
+                return (
+                  <>
+                    <div className="quiz-top">
+                      <span>{contextIndex + 1} / {contextItems.length}</span>
+                    </div>
+                    <div className="context-sentence">
+                      {item.sentence}
+                    </div>
+                    {!item.revealed ? (
+                      <button className="primary" onClick={() => {
+                        const updated = [...contextItems]
+                        updated[contextIndex] = { ...item, revealed: true }
+                        setContextItems(updated)
+                      }}>Cevabı Göster</button>
+                    ) : (
+                      <div className="context-reveal fade-in">
+                        <h3>{item.card.term}</h3>
+                        <p><strong>EN:</strong> {item.card.meaningEn}</p>
+                        <p><strong>TR:</strong> {item.card.meaningTr}</p>
+                        <div className="exercise-actions">
+                          <button className="primary" onClick={() => {
+                            reviewCard('good' as ReviewRating)
+                            setContextIndex(contextIndex + 1)
+                          }}>Biliyorum</button>
+                          <button className="secondary" onClick={() => {
+                            reviewCard('again' as ReviewRating)
+                            setContextIndex(contextIndex + 1)
+                          }}>Tekrar</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* 2. Fill-in-the-Blank */}
+          {exerciseSubView === 'fill-blank' && (
+            <div className="exercise-card">
+              {fillItems.length === 0 ? (
+                <div className="exercise-start">
+                  <h2>Boşluk Doldur</h2>
+                  <p>Cümledeki boşluğa doğru kelimeyi seç.</p>
+                  <button className="primary" onClick={() => {
+                    setFillItems(buildFillBlanks(filteredCards, 10))
+                    setFillIndex(0); setFillCorrect(0); setFillSelected(undefined); setFillSubmitted(false)
+                  }}>Başla</button>
+                </div>
+              ) : fillIndex >= fillItems.length ? (
+                <div className="exercise-start">
+                  <h2>Skor: {fillCorrect} / {fillItems.length}</h2>
+                  <button className="primary" onClick={() => {
+                    setFillItems(buildFillBlanks(filteredCards, 10))
+                    setFillIndex(0); setFillCorrect(0); setFillSelected(undefined); setFillSubmitted(false)
+                  }}>Tekrar Başla</button>
+                </div>
+              ) : (() => {
+                const item = fillItems[fillIndex]
+                return (
+                  <>
+                    <div className="quiz-top">
+                      <span>{fillIndex + 1} / {fillItems.length}</span>
+                      <span>Doğru: {fillCorrect}</span>
+                    </div>
+                    <p className="sentence-box">{item.sentence}</p>
+                    <div className="options-grid">
+                      {item.options.map(opt => {
+                        const isCorrect = opt.toLowerCase() === item.answer.toLowerCase()
+                        return (
+                          <button
+                            key={opt}
+                            className={[
+                              fillSelected === opt ? 'selected' : '',
+                              fillSubmitted && isCorrect ? 'correct' : '',
+                              fillSubmitted && fillSelected === opt && !isCorrect ? 'wrong' : '',
+                            ].join(' ').trim()}
+                            onClick={() => { if (!fillSubmitted) setFillSelected(opt) }}
+                          >{opt}</button>
+                        )
+                      })}
+                    </div>
+                    {fillSubmitted && (
+                      <p className="morph-explanation fade-in">
+                        <strong>{item.card.term}</strong>: {item.card.meaningTr}
+                      </p>
+                    )}
+                    <div className="quiz-actions">
+                      {!fillSubmitted ? (
+                        <button className="primary" disabled={!fillSelected} onClick={() => {
+                          const isCorrect = fillSelected?.toLowerCase() === item.answer.toLowerCase()
+                          setFillSubmitted(true)
+                          if (isCorrect) setFillCorrect(fillCorrect + 1)
+                        }}>Kontrol Et</button>
+                      ) : (
+                        <button className="primary" onClick={() => {
+                          setFillIndex(fillIndex + 1); setFillSelected(undefined); setFillSubmitted(false)
+                        }}>Sonraki</button>
+                      )}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* 3. Synonym Match */}
+          {exerciseSubView === 'match' && (
+            <div className="exercise-card">
+              {matchPairs.length === 0 ? (
+                <div className="exercise-start">
+                  <h2>Eş Anlam Eşleme</h2>
+                  <p>Sol sütundan kelimeyi seç, sağ sütundan anlamını eşleştir.</p>
+                  <button className="primary" onClick={() => {
+                    setMatchPairs(buildSynonymMatch(filteredCards))
+                    setMatchSelectedTerm(null); setMatchResults({})
+                  }}>Başla</button>
+                </div>
+              ) : Object.keys(matchResults).length >= matchPairs.length ? (
+                <div className="exercise-start">
+                  <h2>Tamamlandı!</h2>
+                  <p>Doğru: {Object.values(matchResults).filter(r => r === 'correct').length} / {matchPairs.length}</p>
+                  <button className="primary" onClick={() => {
+                    setMatchPairs(buildSynonymMatch(filteredCards))
+                    setMatchSelectedTerm(null); setMatchResults({})
+                  }}>Tekrar Başla</button>
+                </div>
+              ) : (
+                <div className="match-grid">
+                  <div className="match-col">
+                    <h4>Kelime</h4>
+                    {matchPairs.map(p => (
+                      <button
+                        key={p.term}
+                        className={[
+                          'match-item',
+                          matchSelectedTerm === p.term ? 'selected' : '',
+                          matchResults[p.term] === 'correct' ? 'correct' : '',
+                          matchResults[p.term] === 'wrong' ? 'wrong' : '',
+                        ].join(' ').trim()}
+                        disabled={!!matchResults[p.term]}
+                        onClick={() => setMatchSelectedTerm(p.term)}
+                      >{p.term}</button>
+                    ))}
+                  </div>
+                  <div className="match-col">
+                    <h4>Anlam (EN)</h4>
+                    {[...matchPairs].reverse().map(p => (
+                        <button
+                          key={p.meaningEn}
+                          className={[
+                            'match-item',
+                            Object.entries(matchResults).some(([t, r]) => {
+                              const pair = matchPairs.find(mp => mp.term === t)
+                              return pair?.meaningEn === p.meaningEn && r === 'correct'
+                            }) ? 'correct' : '',
+                          ].join(' ').trim()}
+                          onClick={() => {
+                            if (!matchSelectedTerm) return
+                            const pair = matchPairs.find(mp => mp.term === matchSelectedTerm)
+                            const isCorrect = pair?.meaningEn === p.meaningEn
+                            setMatchResults({ ...matchResults, [matchSelectedTerm]: isCorrect ? 'correct' : 'wrong' })
+                            setMatchSelectedTerm(null)
+                            if (!isCorrect) {
+                              setTimeout(() => {
+                                setMatchResults(prev => {
+                                  const next = { ...prev }
+                                  delete next[matchSelectedTerm!]
+                                  return next
+                                })
+                              }, 800)
+                            }
+                          }}
+                        >{p.meaningEn}</button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4. Translation Exercise */}
+          {exerciseSubView === 'translate' && (
+            <div className="exercise-card">
+              {translateItems.length === 0 ? (
+                <div className="exercise-start">
+                  <h2>Çeviri Egzersizi</h2>
+                  <p>Türkçe anlamdan İngilizce kelimeyi yaz.</p>
+                  <button className="primary" onClick={() => {
+                    setTranslateItems(buildTranslationSet(filteredCards, 10))
+                    setTranslateIndex(0); setTranslateCorrect(0); setTranslateInput(''); setTranslateResult(null)
+                  }}>Başla</button>
+                </div>
+              ) : translateIndex >= translateItems.length ? (
+                <div className="exercise-start">
+                  <h2>Skor: {translateCorrect} / {translateItems.length}</h2>
+                  <button className="primary" onClick={() => {
+                    setTranslateItems(buildTranslationSet(filteredCards, 10))
+                    setTranslateIndex(0); setTranslateCorrect(0); setTranslateInput(''); setTranslateResult(null)
+                  }}>Tekrar Başla</button>
+                </div>
+              ) : (() => {
+                const item = translateItems[translateIndex]
+                return (
+                  <>
+                    <div className="quiz-top">
+                      <span>{translateIndex + 1} / {translateItems.length}</span>
+                      <span>Doğru: {translateCorrect}</span>
+                    </div>
+                    <h2 className="translate-prompt">{item.card.meaningTr}</h2>
+                    {item.card.meaningEn && <p className="translate-hint">İpucu: {item.card.meaningEn}</p>}
+                    <form className="translate-form" onSubmit={e => {
+                      e.preventDefault()
+                      if (translateResult) {
+                        setTranslateIndex(translateIndex + 1)
+                        setTranslateInput(''); setTranslateResult(null)
+                        return
+                      }
+                      const isCorrect = translateInput.trim().toLowerCase() === item.answer
+                      setTranslateResult(isCorrect ? 'correct' : 'wrong')
+                      if (isCorrect) setTranslateCorrect(translateCorrect + 1)
+                    }}>
+                      <input
+                        className={`translate-input ${translateResult || ''}`}
+                        value={translateInput}
+                        onChange={e => setTranslateInput(e.target.value)}
+                        placeholder="İngilizce kelimeyi yaz..."
+                        autoFocus
+                      />
+                      <button type="submit" className="primary">
+                        {translateResult ? 'Sonraki' : 'Kontrol Et'}
+                      </button>
+                    </form>
+                    {translateResult === 'wrong' && (
+                      <p className="translate-answer fade-in">
+                        Doğru cevap: <strong>{item.card.term}</strong>
+                      </p>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           )}
         </section>
