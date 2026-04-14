@@ -123,22 +123,48 @@ function App() {
     })
   }, [])
 
-  // Right-click Google Translate: if text selected, open Google Translate
+  // Right-click translate popup
+  const [translatePopup, setTranslatePopup] = useState<{
+    x: number; y: number; text: string; result: string | null; loading: boolean
+  } | null>(null)
+
   useEffect(() => {
     function handleContextMenu(e: MouseEvent) {
       const selection = window.getSelection()?.toString().trim()
-      if (!selection || selection.length < 1 || selection.length > 200) return
+      if (!selection || selection.length < 1 || selection.length > 200) {
+        setTranslatePopup(null)
+        return
+      }
 
       e.preventDefault()
+      setTranslatePopup({ x: e.clientX, y: e.clientY, text: selection, result: null, loading: true })
+
       const encoded = encodeURIComponent(selection)
-      window.open(
-        `https://translate.google.com/?sl=en&tl=tr&text=${encoded}&op=translate`,
-        '_blank',
-        'noopener'
-      )
+      fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=tr&dt=t&q=${encoded}`)
+        .then(res => res.json())
+        .then((data: unknown) => {
+          const arr = data as [[[string]]];
+          const translated = arr?.[0]?.map(r => r[0]).join('') || ''
+          setTranslatePopup(prev => prev ? { ...prev, result: translated, loading: false } : null)
+        })
+        .catch(() => {
+          setTranslatePopup(prev => prev ? { ...prev, result: 'Çeviri yapılamadı', loading: false } : null)
+        })
     }
+
+    function handleClick(e: MouseEvent) {
+      const popup = document.querySelector('.translate-popup')
+      if (popup && !popup.contains(e.target as Node)) {
+        setTranslatePopup(null)
+      }
+    }
+
     document.addEventListener('contextmenu', handleContextMenu)
-    return () => document.removeEventListener('contextmenu', handleContextMenu)
+    document.addEventListener('click', handleClick)
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu)
+      document.removeEventListener('click', handleClick)
+    }
   }, [])
 
   // Check existing token on mount
@@ -694,6 +720,33 @@ function App() {
             })}
           </div>
         </section>
+      )}
+      {translatePopup && (
+        <div
+          className="translate-popup"
+          style={{
+            left: Math.min(translatePopup.x, window.innerWidth - 340),
+            top: Math.min(translatePopup.y, window.innerHeight - 160),
+          }}
+        >
+          <div className="translate-original">{translatePopup.text}</div>
+          <div className="translate-result">
+            {translatePopup.loading ? 'Çevriliyor...' : translatePopup.result}
+          </div>
+          <button
+            className="translate-open"
+            onClick={() => {
+              window.open(
+                `https://translate.google.com/?sl=en&tl=tr&text=${encodeURIComponent(translatePopup.text)}&op=translate`,
+                '_blank',
+                'noopener'
+              )
+              setTranslatePopup(null)
+            }}
+          >
+            Google Translate'te Aç
+          </button>
+        </div>
       )}
     </main>
   )
