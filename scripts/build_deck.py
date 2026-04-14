@@ -409,13 +409,58 @@ def parse_yds_pdf(path: Path) -> list[Card]:
 
 
 def parse_cesur_ozturk_pdf(path: Path) -> list[Card]:
-    """Parse Cesur Ozturk Academic Vocabulary. Simple line-based parser."""
+    """Parse Cesur Ozturk Academic Vocabulary.
+
+    PDF has table rows like:
+      arise (from) appear ortaya ctkmak I wonder if you could...
+      ^term        ^EN    ^TR -mak/mek  ^example sentence
+
+    Strategy: Find Turkish infinitive (-mak/-mek) in each line,
+    extract term (first word + optional parenthetical), EN synonyms
+    (between term and TR word), and example (after TR word).
+    """
     cards: list[Card] = []
     reader = PdfReader(str(path))
-    tr_chars = set("ğüşöçıİĞÜŞÖÇ")
-    term_re = re.compile(r"^([a-z][a-z ()/'\-]{1,35})\s+([a-z].*)")
-    skip_words = {"exercise", "basic", "essential", "verbs", "nouns", "adjective",
-                  "sozcuk", "sozciik", "kar", "complete", "match", "fill", "choose"}
+
+    tr_inf_re = re.compile(r"\b([a-zA-ZğüşöçıİĞÜŞÖÇ]{2,}(?:mak|mek))\b")
+
+    skip_prefixes = (
+        "BASIC", "ESSENTIAL", "Sozcuk", "Sozc", "Kar", "VERB", "NOUN", "ADJ",
+        "ADVERB", "exercise", "Exercise", "Complete", "Match", "Fill", "Choose",
+        "___", "Write", "Underline", "Look", "Read",
+    )
+    # Common English words that appear as continuation lines, not terms
+    skip_terms = {
+        "from", "to", "for", "with", "the", "a", "an", "be", "of", "in", "on",
+        "it", "is", "are", "was", "were", "do", "does", "did", "has", "have",
+        "had", "not", "but", "or", "and", "if", "so", "at", "by", "up", "out",
+        "about", "into", "over", "after", "before", "between", "through",
+    }
+
+    def extract_term_words(words: list[str]) -> tuple[str, int]:
+        """Extract term: first word + optional parenthetical / particle."""
+        parts: list[str] = []
+        idx = 0
+        if not words:
+            return "", 0
+        parts.append(words[0])
+        idx = 1
+        while idx < len(words):
+            w = words[idx]
+            if w.startswith("("):
+                while idx < len(words):
+                    parts.append(words[idx])
+                    if ")" in words[idx]:
+                        idx += 1
+                        break
+                    idx += 1
+                break
+            elif w in ("up", "down", "out", "in", "on", "off", "over", "away", "back", "about", "into"):
+                parts.append(w)
+                idx += 1
+            else:
+                break
+        return " ".join(parts), idx
 
     for page in reader.pages:
         try:
@@ -423,51 +468,53 @@ def parse_cesur_ozturk_pdf(path: Path) -> list[Card]:
         except Exception:
             continue
         lines = [clean_text(line) for line in text.splitlines() if clean_text(line)]
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            first_word = line.split()[0].lower() if line.split() else ""
-            if first_word in skip_words or line.startswith("___") or re.match(r"^\d+\.", line):
-                i += 1
+
+        for line in lines:
+            if any(line.startswith(p) for p in skip_prefixes):
                 continue
-            match = term_re.match(line)
+            if re.match(r"^\d+\.?\s", line) or len(line) < 15:
+                continue
+            if not re.match(r"^[a-z]", line):
+                continue
+
+            match = tr_inf_re.search(line)
             if not match:
-                i += 1
                 continue
-            term = clean_text(match.group(1))
-            rest = clean_text(match.group(2))
-            meaning_en = rest
-            meaning_tr = ""
-            examples: list[str] = []
-            i += 1
-            for _ in range(6):
-                if i >= len(lines):
-                    break
-                nxt = lines[i]
-                if term_re.match(nxt) and not any(c in nxt for c in tr_chars):
-                    break
-                has_tr = any(c in nxt for c in tr_chars)
-                is_sentence = len(nxt.split()) >= 5
-                if has_tr and not is_sentence:
-                    meaning_tr = nxt
-                elif is_sentence and nxt[0].isupper():
-                    examples.append(nxt)
-                i += 1
-            if len(term) < 2 or normalize_text(term) in IGNORED_TERMS:
+
+            tr_word = clean_text(match.group(1))
+            before_tr = line[: match.start()].strip()
+            after_tr = line[match.end() :].strip()
+
+            words = before_tr.split()
+            if not words:
                 continue
+
+            term, term_end = extract_term_words(words)
+            en_syn = " ".join(words[term_end:])
+
+            if len(term) < 2 or len(term) > 35:
+                continue
+            if term.lower() in skip_terms:
+                continue
+            if normalize_text(term) in IGNORED_TERMS:
+                continue
+
+            example = after_tr if after_tr and after_tr[0].isupper() and len(after_tr) > 10 else ""
+
             card = Card(
                 term=term,
                 type=detect_type(term, ""),
                 register="academic",
-                meaning_en=meaning_en[:200],
-                meaning_tr=meaning_tr[:200],
-                examples=examples[:2],
+                meaning_en=en_syn[:200] if en_syn else "",
+                meaning_tr=tr_word,
+                examples=[example[:200]] if example else [],
                 source=path.name,
                 tags=["source:pdf", "book:cesur-ozturk"],
             )
             card.finalize()
             if card.normalized and (card.meaning_en or card.meaning_tr):
                 cards.append(card)
+
     return cards
 
 def parse_acl_xls(path: Path) -> list[Card]:
@@ -497,8 +544,10 @@ def parse_acl_xls(path: Path) -> list[Card]:
             continue
 
         part_of_speech = clean_text("/".join(str(part) for part in [pos_1, pos_2] if part))
-        meaning_en = "Academic collocation frequently used in formal writing and exam passages."
-        example = f"In an academic report, writers often use \"{term}\" for precision."
+        # Use the term components as the EN meaning (cleaner than a generic sentence)
+        clean_term = re.sub(r"\([^)]*\)\s*", "", term).strip()
+        meaning_en = clean_term
+        example = f'The report examines "{term}" in detail.'
 
         card = Card(
             term=term,
@@ -662,11 +711,7 @@ def fill_missing_tr(cards: list[Card], max_translate: int) -> None:
         if card.meaning_tr:
             translated += 1
 
-    for card in cards:
-        if card.meaning_tr:
-            continue
-        card.meaning_tr = card.term
-        card.finalize()
+    # Leave meaning_tr empty if not translated — do NOT fall back to term
 
 
 def apply_quota(cards: list[Card], max_daily: int, max_academic: int) -> list[Card]:
