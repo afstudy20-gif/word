@@ -12,6 +12,7 @@ import {
 } from './lib/api'
 import { decompose, findRelatedByAffix, groupByPrefix, buildMorphQuiz, PREFIXES, SUFFIXES } from './lib/morphology'
 import { buildContextCards, buildFillBlanks, buildSynonymMatch, buildTranslationSet } from './lib/exercises'
+import { GRAMMAR_CATEGORIES, GRAMMAR_TOPICS, type GrammarTopic } from './lib/grammar'
 import { buildQuizQuestions } from './lib/quiz'
 import {
   applyReview,
@@ -34,7 +35,7 @@ import type {
   VocabCard,
 } from './types'
 
-type ViewMode = 'flashcards' | 'quiz' | 'library' | 'word-structure' | 'exercises'
+type ViewMode = 'flashcards' | 'quiz' | 'library' | 'word-structure' | 'exercises' | 'grammar'
 type StructureSubView = 'explorer' | 'decomposer' | 'quiz'
 type ExerciseSubView = 'context' | 'fill-blank' | 'match' | 'translate'
 
@@ -143,6 +144,14 @@ function App() {
   const [translateInput, setTranslateInput] = useState('')
   const [translateResult, setTranslateResult] = useState<'correct' | 'wrong' | null>(null)
   const [translateCorrect, setTranslateCorrect] = useState(0)
+
+  // Grammar state
+  const [grammarCategory, setGrammarCategory] = useState<string | null>(null)
+  const [grammarTopic, setGrammarTopic] = useState<GrammarTopic | null>(null)
+  const [grammarTestIndex, setGrammarTestIndex] = useState(0)
+  const [grammarSelected, setGrammarSelected] = useState<string | undefined>()
+  const [grammarSubmitted, setGrammarSubmitted] = useState(false)
+  const [grammarCorrect, setGrammarCorrect] = useState(0)
 
   // Debounced save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -512,6 +521,12 @@ function App() {
             onClick={() => setMode('exercises')}
           >
             Alıştırmalar
+          </button>
+          <button
+            className={mode === 'grammar' ? 'is-active' : ''}
+            onClick={() => setMode('grammar')}
+          >
+            Gramer
           </button>
         </div>
 
@@ -1399,6 +1414,123 @@ function App() {
                   </>
                 )
               })()}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!loading && !loadError && mode === 'grammar' && (
+        <section className="workspace grammar-space">
+          {!grammarCategory ? (
+            <div className="grammar-categories">
+              <h2 className="section-title">Gramer Konuları</h2>
+              <div className="grammar-cat-grid">
+                {GRAMMAR_CATEGORIES.map(cat => {
+                  const count = GRAMMAR_TOPICS.filter(t => t.category === cat).length
+                  return (
+                    <button key={cat} className="grammar-cat-card" onClick={() => setGrammarCategory(cat)}>
+                      <h3>{cat}</h3>
+                      <small>{count} konu</small>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : !grammarTopic ? (
+            <div className="grammar-topic-list">
+              <button className="back-btn" onClick={() => setGrammarCategory(null)}>← Kategoriler</button>
+              <h2 className="section-title">{grammarCategory}</h2>
+              <div className="grammar-topics">
+                {GRAMMAR_TOPICS.filter(t => t.category === grammarCategory).map(topic => (
+                  <button key={topic.id} className="grammar-topic-card" onClick={() => {
+                    setGrammarTopic(topic)
+                    setGrammarTestIndex(0); setGrammarSelected(undefined); setGrammarSubmitted(false); setGrammarCorrect(0)
+                  }}>
+                    <h3>{topic.title}</h3>
+                    <p>{topic.titleTr}</p>
+                    <small>{topic.tests.length} test sorusu</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="grammar-detail">
+              <button className="back-btn" onClick={() => setGrammarTopic(null)}>← {grammarCategory}</button>
+              <div className="grammar-header">
+                <h2>{grammarTopic.title}</h2>
+                <p className="grammar-title-tr">{grammarTopic.titleTr}</p>
+              </div>
+
+              <div className="grammar-rules">
+                <h3>Kurallar</h3>
+                <ul>
+                  {grammarTopic.rules.map((rule, i) => <li key={i}>{rule}</li>)}
+                </ul>
+              </div>
+
+              <div className="grammar-examples">
+                <h3>Örnekler</h3>
+                {grammarTopic.examples.map((ex, i) => (
+                  <div key={i} className="grammar-example-row">
+                    <p className="grammar-en">{ex.en}</p>
+                    <p className="grammar-tr">{ex.tr}</p>
+                  </div>
+                ))}
+              </div>
+
+              {grammarTopic.tests.length > 0 && (
+                <div className="grammar-test-section">
+                  <h3>Test</h3>
+                  {grammarTestIndex < grammarTopic.tests.length ? (() => {
+                    const test = grammarTopic.tests[grammarTestIndex]
+                    return (
+                      <div className="morph-quiz-card">
+                        <div className="quiz-top">
+                          <span>Soru {grammarTestIndex + 1} / {grammarTopic.tests.length}</span>
+                          <span>Doğru: {grammarCorrect}</span>
+                        </div>
+                        <h2>{test.sentence}</h2>
+                        <div className="options-grid">
+                          {test.options.map(opt => (
+                            <button
+                              key={opt}
+                              className={[
+                                grammarSelected === opt ? 'selected' : '',
+                                grammarSubmitted && opt === test.answer ? 'correct' : '',
+                                grammarSubmitted && grammarSelected === opt && opt !== test.answer ? 'wrong' : '',
+                              ].join(' ').trim()}
+                              onClick={() => { if (!grammarSubmitted) setGrammarSelected(opt) }}
+                            >{opt}</button>
+                          ))}
+                        </div>
+                        {grammarSubmitted && (
+                          <p className="morph-explanation fade-in">{test.explanation}</p>
+                        )}
+                        <div className="quiz-actions">
+                          {!grammarSubmitted ? (
+                            <button className="primary" disabled={!grammarSelected} onClick={() => {
+                              setGrammarSubmitted(true)
+                              if (grammarSelected === test.answer) setGrammarCorrect(grammarCorrect + 1)
+                            }}>Kontrol Et</button>
+                          ) : (
+                            <button className="primary" onClick={() => {
+                              setGrammarTestIndex(grammarTestIndex + 1)
+                              setGrammarSelected(undefined); setGrammarSubmitted(false)
+                            }}>{grammarTestIndex + 1 >= grammarTopic.tests.length ? 'Sonuçlar' : 'Sonraki'}</button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })() : (
+                    <div className="exercise-start">
+                      <h2>Skor: {grammarCorrect} / {grammarTopic.tests.length}</h2>
+                      <button className="primary" onClick={() => {
+                        setGrammarTestIndex(0); setGrammarSelected(undefined); setGrammarSubmitted(false); setGrammarCorrect(0)
+                      }}>Tekrar Çöz</button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </section>
