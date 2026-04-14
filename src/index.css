@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
+
+:root {
+  --bg-0: #fcf6ec;
+  --bg-1: #f7e8d6;
+  --bg-2: #e8f5ee;
+  --ink: #1f2933;
+  --ink-soft: #4a5663;
+  --line: #d8cdbf;
+  --panel: rgba(255, 253, 249, 0.92);
+  --shadow: 0 14px 40px rgba(51, 41, 29, 0.10);
+  --shadow-sm: 0 4px 12px rgba(51, 41, 29, 0.08);
+  --brand: #0e8a67;
+  --brand-strong: #066247;
+  --danger: #af3c2b;
+  --warn: #c67c12;
+  --good: #117a8b;
+  --known: #5f4bb6;
+
+  font-family: 'Space Grotesk', 'Avenir Next', 'Futura', sans-serif;
+  color: var(--ink);
+  line-height: 1.45;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 12% -10%, rgba(14, 138, 103, 0.14), transparent 60%),
+    radial-gradient(900px 500px at 105% 0%, rgba(198, 124, 18, 0.16), transparent 60%),
+    linear-gradient(145deg, var(--bg-0), var(--bg-1) 48%, var(--bg-2));
+  scroll-behavior: smooth;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: 'Source Serif 4', 'Iowan Old Style', serif;
+  letter-spacing: -0.02em;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+#root {
+  padding: 28px 18px 42px;
+}
+
+/* Auth loading */
+.auth-loading {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--ink-soft);
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--line);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Fade-in for card details */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
