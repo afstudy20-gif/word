@@ -123,6 +123,24 @@ function App() {
     })
   }, [])
 
+  // Right-click Google Translate: if text selected, open Google Translate
+  useEffect(() => {
+    function handleContextMenu(e: MouseEvent) {
+      const selection = window.getSelection()?.toString().trim()
+      if (!selection || selection.length < 1 || selection.length > 200) return
+
+      e.preventDefault()
+      const encoded = encodeURIComponent(selection)
+      window.open(
+        `https://translate.google.com/?sl=en&tl=tr&text=${encoded}&op=translate`,
+        '_blank',
+        'noopener'
+      )
+    }
+    document.addEventListener('contextmenu', handleContextMenu)
+    return () => document.removeEventListener('contextmenu', handleContextMenu)
+  }, [])
+
   // Check existing token on mount
   useEffect(() => {
     if (!getToken()) {
@@ -504,7 +522,11 @@ function App() {
                 <span className="pill source">{activeCard.source}</span>
               </div>
 
-              <button className="card-face" onClick={() => setFlipped((state) => !state)}>
+              <button className="card-face" onClick={() => {
+                const sel = window.getSelection()?.toString().trim()
+                if (sel && sel.length > 0) return
+                setFlipped((state) => !state)
+              }}>
                 <h2>{activeCard.term}</h2>
                 <p className="hint">Kartı çevirmek için tıkla</p>
                 {flipped ? (

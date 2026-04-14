@@ -281,6 +281,8 @@
   cursor: pointer;
   min-height: 220px;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .card-face:hover {
@@ -424,6 +426,8 @@
   background: #fff;
   cursor: pointer;
   transition: all 0.2s ease;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .options-grid button:hover:not(.correct):not(.wrong) {

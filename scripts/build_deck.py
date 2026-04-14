@@ -60,6 +60,7 @@ ESSENTIAL_HEAD_RE = re.compile(r"^([A-Za-z][A-Za-z'\- ]{1,40})\s*\[[^\]]+\]\s*([
 BULLET_RE = re.compile(r"^[-–—*•»]+\s*(.+)$")
 NON_ASCII_RE = re.compile(r"[^\x00-\x7F]")
 SPACE_RE = re.compile(r"\s+")
+YDS_ENTRY_RE = re.compile(r"^\d+\)\s*([A-Za-z][A-Za-z /'\-]{1,60}?)\s*-\s*(.+)$")
 
 
 @dataclass
@@ -341,6 +342,134 @@ def parse_essential_pdf(path: Path) -> list[Card]:
     return cards
 
 
+def parse_yds_pdf(path: Path) -> list[Card]:
+    """Parse YDS style lists: '1) TERM - Example sentence (TÜRKÇE ANLAM)'."""
+    cards: list[Card] = []
+    reader = PdfReader(str(path))
+
+    # Collect all text, then join multiline entries
+    all_text = ""
+    for page in reader.pages:
+        try:
+            all_text += (page.extract_text() or "") + "\n"
+        except Exception:
+            continue
+
+    # Join continuation lines (lines not starting with a number)
+    joined_lines: list[str] = []
+    for line in all_text.splitlines():
+        line = clean_text(line)
+        if not line:
+            continue
+        if re.match(r"^\d+\)", line):
+            joined_lines.append(line)
+        elif joined_lines:
+            joined_lines[-1] += " " + line
+
+    for line in joined_lines:
+        match = YDS_ENTRY_RE.match(line)
+        if not match:
+            continue
+
+        term = clean_text(match.group(1))
+        rest = clean_text(match.group(2))
+
+        # Extract Turkish meaning from last parenthesized block
+        meaning_tr = ""
+        tr_match = re.search(r"\(([^()]{2,80})\)\s*$", rest)
+        if not tr_match:
+            # Try finding uppercase Turkish in parens anywhere
+            tr_match = re.search(r"\(([A-ZÇĞIİÖŞÜ][A-ZÇĞIİÖŞÜa-zçğıiöşü /-]{1,80})\)", rest)
+        if tr_match:
+            meaning_tr = clean_text(tr_match.group(1))
+            rest = clean_text(rest[:tr_match.start()])
+
+        # Rest is the example sentence
+        example = rest.strip(" .")
+        if len(term) < 2:
+            continue
+
+        card = Card(
+            term=term,
+            type=detect_type(term, ""),
+            register="academic",
+            meaning_en="",
+            meaning_tr=meaning_tr,
+            examples=[example] if len(example) > 10 else [],
+            source=path.name,
+            tags=["source:pdf", "list:yds-target"],
+        )
+        card.finalize()
+        cards.append(card)
+    return cards
+
+
+
+
+
+
+def parse_cesur_ozturk_pdf(path: Path) -> list[Card]:
+    """Parse Cesur Ozturk Academic Vocabulary. Simple line-based parser."""
+    cards: list[Card] = []
+    reader = PdfReader(str(path))
+    tr_chars = set("ğüşöçıİĞÜŞÖÇ")
+    term_re = re.compile(r"^([a-z][a-z ()/'\-]{1,35})\s+([a-z].*)")
+    skip_words = {"exercise", "basic", "essential", "verbs", "nouns", "adjective",
+                  "sozcuk", "sozciik", "kar", "complete", "match", "fill", "choose"}
+
+    for page in reader.pages:
+        try:
+            text = page.extract_text() or ""
+        except Exception:
+            continue
+        lines = [clean_text(line) for line in text.splitlines() if clean_text(line)]
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            first_word = line.split()[0].lower() if line.split() else ""
+            if first_word in skip_words or line.startswith("___") or re.match(r"^\d+\.", line):
+                i += 1
+                continue
+            match = term_re.match(line)
+            if not match:
+                i += 1
+                continue
+            term = clean_text(match.group(1))
+            rest = clean_text(match.group(2))
+            meaning_en = rest
+            meaning_tr = ""
+            examples: list[str] = []
+            i += 1
+            for _ in range(6):
+                if i >= len(lines):
+                    break
+                nxt = lines[i]
+                if term_re.match(nxt) and not any(c in nxt for c in tr_chars):
+                    break
+                has_tr = any(c in nxt for c in tr_chars)
+                is_sentence = len(nxt.split()) >= 5
+                if has_tr and not is_sentence:
+                    meaning_tr = nxt
+                elif is_sentence and nxt[0].isupper():
+                    examples.append(nxt)
+                i += 1
+            if len(term) < 2 or normalize_text(term) in IGNORED_TERMS:
+                continue
+            card = Card(
+                term=term,
+                type=detect_type(term, ""),
+                register="academic",
+                meaning_en=meaning_en[:200],
+                meaning_tr=meaning_tr[:200],
+                examples=examples[:2],
+                source=path.name,
+                tags=["source:pdf", "book:cesur-ozturk"],
+            )
+            card.finalize()
+            if card.normalized and (card.meaning_en or card.meaning_tr):
+                cards.append(card)
+    return cards
+
 def parse_acl_xls(path: Path) -> list[Card]:
     cards: list[Card] = []
 
@@ -579,6 +708,7 @@ def apply_quota(cards: list[Card], max_daily: int, max_academic: int) -> list[Ca
     return sorted(selected, key=lambda card: (card.register, card.term.lower()))
 
 
+
 def build_deck(
     source_dir: Path,
     output_path: Path,
@@ -592,38 +722,62 @@ def build_deck(
     acl_file = source_dir / "2021_Teachers_AcademicCollocationList.xls"
     vocab_phrasal_file = source_dir / "English Vocabulary and Phrasel Verbs_opt_Optimized.pdf"
     essential_files = sorted(source_dir.glob("Paul Nation_4000 Essential English Words *_2009.pdf"))
+    yds_files = sorted(source_dir.glob("*[Yy][Dd][Ss]*")) + sorted(source_dir.glob("*[Yy][Dd][Tt]*")) + sorted(source_dir.glob("*[Kk][Pp][Dd][Ss]*"))
+    yds_files = sorted(list({f for f in yds_files if f.suffix.lower() == ".pdf"}))
+    cesur_ozturk_file = source_dir / "Essential Academic Vocabulary-Cesur ÖZTÜRK.pdf"
 
-    if not vocab_phrasal_file.exists():
-        raise FileNotFoundError(f"Missing file: {vocab_phrasal_file}")
-    if not acl_file.exists():
-        raise FileNotFoundError(f"Missing file: {acl_file}")
+    all_cards: list[Card] = []
 
-    print(f"[1/5] Parsing academic collocations: {acl_file.name}")
-    acl_cards = parse_acl_xls(acl_file)
-    academic_terms: set[str] = set()
-    for card in acl_cards:
-        academic_terms.update(card.normalized.split())
+    print(f"[1/6] Parsing academic collocations: {acl_file.name}")
+    if acl_file.exists():
+        acl_cards = parse_acl_xls(acl_file)
+        all_cards.extend(acl_cards)
+        academic_terms: set[str] = set()
+        for card in acl_cards:
+            academic_terms.update(card.normalized.split())
+        print(f"  -> extracted {len(acl_cards)} academic collocation cards")
+    else:
+        academic_terms = set()
+        print("  [!] File not found, skipping")
 
-    print(f"  -> extracted {len(acl_cards)} academic collocation cards")
+    print(f"[2/6] Parsing vocabulary + phrasal verbs")
+    if vocab_phrasal_file.exists():
+        vocab_cards = parse_vocab_phrasal_pdf(vocab_phrasal_file, academic_terms)
+        all_cards.extend(vocab_cards)
+        print(f"  -> extracted {len(vocab_cards)} entries")
+    else:
+        print("  [!] File not found, skipping")
 
-    print(f"[2/5] Parsing vocabulary + phrasal verbs: {vocab_phrasal_file.name}")
-    vocab_cards = parse_vocab_phrasal_pdf(vocab_phrasal_file, academic_terms)
-    print(f"  -> extracted {len(vocab_cards)} entries")
-
-    essential_cards: list[Card] = []
     if essential_files:
-        print(f"[3/5] Parsing 4000 essential series ({len(essential_files)} files)")
+        print(f"[3/6] Parsing 4000 essential series ({len(essential_files)} files)")
         for file in essential_files:
             extracted = parse_essential_pdf(file)
-            essential_cards.extend(extracted)
+            all_cards.extend(extracted)
             print(f"  -> {file.name}: {len(extracted)} entries")
     else:
-        print("[3/5] 4000 essential files not found, skipping")
+        print("[3/6] 4000 essential files not found, skipping")
 
-    print("[4/5] Adding idiom starter pack")
+    if yds_files:
+        print(f"[4/6] Parsing YDS/YDT/KPDS target lists ({len(yds_files)} files)")
+        for file in yds_files:
+            extracted = parse_yds_pdf(file)
+            all_cards.extend(extracted)
+            print(f"  -> {file.name}: {len(extracted)} entries")
+    else:
+        print("[4/6] No YDS/YDT/KPDS files found, skipping")
+
+    if cesur_ozturk_file.exists():
+        print(f"[5/6] Parsing Cesur Öztürk: {cesur_ozturk_file.name}")
+        extracted = parse_cesur_ozturk_pdf(cesur_ozturk_file)
+        all_cards.extend(extracted)
+        print(f"  -> extracted {len(extracted)} entries")
+    else:
+        print("[5/6] Cesur Öztürk file not found, skipping")
+
+    print("[6/6] Adding idiom starter pack")
     seed_idioms = idiom_seed_cards()
+    all_cards.extend(seed_idioms)
 
-    all_cards = [*acl_cards, *vocab_cards, *essential_cards, *seed_idioms]
     merged = merge_cards(all_cards)
 
     print(f"  -> merged deck size before quota: {len(merged)}")
@@ -647,20 +801,19 @@ def build_deck(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"[5/5] Deck generated -> {output_path}")
+    print(f"Deck generated -> {output_path}")
     print(
         f"  total={payload['totalCards']} daily={payload['stats']['daily']} "
         f"academic={payload['stats']['academic']} "
         f"phrasal={payload['stats']['phrasal_verbs']} idioms={payload['stats']['idioms']}"
     )
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build vocabulary deck from local resources")
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--max-daily", type=int, default=900)
-    parser.add_argument("--max-academic", type=int, default=900)
+    parser.add_argument("--max-daily", type=int, default=1500)
+    parser.add_argument("--max-academic", type=int, default=1500)
     parser.add_argument(
         "--max-translate",
         type=int,
